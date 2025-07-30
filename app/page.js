@@ -22,6 +22,7 @@ export default function LocalLens() {
   const [coords, setCoords] = useState(null);
   const [locationName, setLocationName] = useState("");
   const [fact, setFact] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [geoError, setGeoError] = useState("");
   const [manualQuery, setManualQuery] = useState("");
@@ -70,6 +71,7 @@ export default function LocalLens() {
 
   async function fetchLocationData(lat, lon) {
     setLoading(true);
+    setImageUrl("");
     try {
       const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&zoom=18&lat=${lat}&lon=${lon}`);
       const geoData = await geoRes.json();
@@ -86,7 +88,7 @@ export default function LocalLens() {
         "Unknown location";
       setLocationName(name);
 
-      await fetchWikipediaFact(name, lat, lon);
+      await fetchWikipediaFactAndImage(name, lat, lon);
     } catch (err) {
       console.error("Error fetching reverse geocode:", err);
       setFact("Unable to fetch location details at the moment.");
@@ -95,7 +97,14 @@ export default function LocalLens() {
     }
   }
 
-  async function fetchWikipediaFact(name, lat, lon) {
+  function pickImageFromSummary(data) {
+    // Prefer the larger "originalimage" when available, fallback to "thumbnail"
+    if (data?.originalimage?.source) return data.originalimage.source;
+    if (data?.thumbnail?.source) return data.thumbnail.source;
+    return "";
+  }
+
+  async function fetchWikipediaFactAndImage(name, lat, lon) {
     try {
       // Try original name then a cleaned version (e.g., "Capital City of Prague" -> "Prague")
       const candidates = [];
@@ -124,7 +133,10 @@ export default function LocalLens() {
         if (wikiRes.ok) {
           const wikiData = await wikiRes.json();
           if (wikiData?.extract) {
+            setLocationName(wikiData?.title || title);
             setFact(wikiData.extract);
+            const img = pickImageFromSummary(wikiData);
+            if (img) setImageUrl(img);
             return;
           }
         }
@@ -132,7 +144,7 @@ export default function LocalLens() {
 
       // Fallback: progressive geosearch starting at 300m; expand only if nothing is found
       if (typeof lat === "number" && typeof lon === "number") {
-        const radii = [300, 600, 1200, 3000]; // starts at 300m, expands only as needed
+        const radii = [300, 600, 1200, 3000];
         for (const r of radii) {
           const url = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=${r}&gslimit=10&format=json&origin=*`;
           const res = await fetch(url);
@@ -148,8 +160,10 @@ export default function LocalLens() {
               if (!summary.ok) continue;
               const summaryData = await summary.json();
               if (summaryData?.extract) {
-                setLocationName(h.title);
+                setLocationName(summaryData?.title || h.title);
                 setFact(summaryData.extract);
+                const img = pickImageFromSummary(summaryData);
+                if (img) setImageUrl(img);
                 return;
               }
             }
@@ -159,7 +173,7 @@ export default function LocalLens() {
 
       setFact("No interesting fact found for this location.");
     } catch (err) {
-      console.error("Error fetching wiki fact:", err);
+      console.error("Error fetching wiki fact/image:", err);
       setFact("Unable to fetch location facts at the moment.");
     }
   }
@@ -178,7 +192,7 @@ export default function LocalLens() {
         setLocationName(item.display_name || q);
       } else {
         setLocationName(q);
-        await fetchWikipediaFact(q);
+        await fetchWikipediaFactAndImage(q);
       }
     } catch (err) {
       console.error("Manual lookup error:", err);
@@ -193,11 +207,24 @@ export default function LocalLens() {
       <h1 className="text-3xl font-bold mb-4">🌍 LocalLens</h1>
       <div className="max-w-lg w-full bg-white rounded-xl shadow p-6">
         {geoError && <p className="text-red-600 mb-4 text-sm" role="alert">{geoError}</p>}
+
         <div className="flex items-center justify-center gap-2 mb-4">
           <MapPinIcon className="w-5 h-5" />
           <span className="text-lg font-semibold">{locationName || (coords ? "Locating..." : "Enter a place or allow location")}</span>
         </div>
+
+        {imageUrl && (
+          <img
+            src={imageUrl}
+            alt={`Image of ${locationName}`}
+            className="w-full max-h-80 object-cover rounded-lg mb-4 shadow"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
+        )}
+
         <p className="text-sm text-gray-700 min-h-[3rem]">{loading ? "Loading fun fact..." : fact}</p>
+
         <div className="mt-4 flex items-center gap-2 justify-center">
           <button
             className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center justify-center gap-2 disabled:bg-blue-300"
@@ -207,6 +234,7 @@ export default function LocalLens() {
             <RefreshCcwIcon className="w-4 h-4" /> Refresh Fact
           </button>
         </div>
+
         <div className="mt-6">
           <label htmlFor="place" className="block text-sm font-medium text-gray-700 mb-1">Or look up a place manually</label>
           <div className="flex gap-2">
