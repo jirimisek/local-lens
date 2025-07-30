@@ -221,9 +221,14 @@ export default function LocalLens() {
         <p className="text-sm text-gray-700 min-h-[3rem]">{loading ? "Loading fun fact..." : fact}</p>
 
         <div className="mt-4 flex items-center gap-2 justify-center">
-          <button onClick={refreshLocation}$1>
+          <button
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center justify-center gap-2 disabled:bg-blue-300"
+            onClick={refreshLocation}
+            disabled={loading}
+          >
             <RefreshCcwIcon className="w-4 h-4" /> Refresh Location & Fact
           </button>
+
         </div>
 
         <div className="mt-6">
