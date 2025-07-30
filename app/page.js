@@ -27,17 +27,33 @@ export default function LocalLens() {
   const [geoError, setGeoError] = useState("");
   const [manualQuery, setManualQuery] = useState("");
 
+  // Call refreshLocation on mount
   useEffect(() => {
-    requestLocation();
+    refreshLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function requestLocation() {
-    if (typeof window === "undefined") return;
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition( , { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
-    } else {
+  // 🔁 Fresh geolocation (used on mount and by the button)
+  function refreshLocation() {
+    if (typeof window === "undefined" || !navigator.geolocation) {
       setGeoError("Geolocation not supported by your browser. Please enter a place name below.");
+      return;
     }
+    setLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+        setCoords({ lat, lon }); // triggers fetch via useEffect
+        setGeoError("");
+      },
+      (error) => {
+        console.error("Geolocation error:", error?.message || `Code ${error?.code}` || error);
+        setGeoError("Location access denied or unavailable. Enter a place name below.");
+        setLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   }
 
   useEffect(() => {
@@ -100,6 +116,7 @@ export default function LocalLens() {
         if (cleaned && cleaned !== name) candidates.push(cleaned);
       }
 
+      // Try the title candidates first
       for (const title of candidates) {
         const wikiRes = await fetch(
           `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
@@ -116,6 +133,7 @@ export default function LocalLens() {
         }
       }
 
+      // Fallback: progressive geosearch starting at 300m; expand only if nothing is found
       if (typeof lat === "number" && typeof lon === "number") {
         const radii = [300, 600, 1200, 3000];
         for (const r of radii) {
@@ -174,29 +192,6 @@ export default function LocalLens() {
     }
   }
 
-  // Refresh both location and facts using a fresh geolocation reading
-  function requestLocation() {
-  if (typeof window === "undefined") return;
-  if (!navigator.geolocation) {
-    setGeoError("Geolocation not supported by your browser. Please enter a place name below.");
-    return;
-  }
-
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      const lat = position.coords.latitude;
-      const lon = position.coords.longitude;
-      setCoords({ lat, lon });     // triggers fetch via useEffect
-      setGeoError("");
-    },
-    (error) => {
-      console.error("Geolocation error:", error?.message || `Code ${error?.code}` || error);
-      setGeoError("Location access denied or unavailable. Enter a place name below.");
-    },
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-  );
-}
-
   return (
     <div className="min-h-screen bg-gray-100 p-4 flex flex-col items-center justify-center text-center">
       <h1 className="text-3xl font-bold mb-4">🌍 LocalLens</h1>
@@ -228,7 +223,6 @@ export default function LocalLens() {
           >
             <RefreshCcwIcon className="w-4 h-4" /> Refresh Location & Fact
           </button>
-
         </div>
 
         <div className="mt-6">
