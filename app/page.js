@@ -1,14 +1,7 @@
 "use client";
 
-// LocalLens - A location-based fun facts app using React (no shadcn, no external UI deps)
-// Simplifications to avoid Vercel build issues:
-//  - Removed shadcn/ui imports and alias paths
-//  - Replaced lucide-react icons with inline SVGs (so no extra packages needed)
-//  - Added manual location input fallback when geolocation is denied/unavailable
-
 import { useEffect, useState } from "react";
 
-// Inline SVG icons (MapPin & Refresh) to avoid external icon packages
 function MapPinIcon(props) {
   return (
     <svg {...props} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -34,26 +27,17 @@ export default function LocalLens() {
   const [manualQuery, setManualQuery] = useState("");
 
   useEffect(() => {
-    if (typeof window === "undefined") return; // SSR safety
+    if (typeof window === "undefined") return;
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setCoords({
-            lat: position.coords.latitude,
-            lon: position.coords.longitude,
-          });
+          setCoords({ lat: position.coords.latitude, lon: position.coords.longitude });
           setGeoError("");
         },
         (error) => {
-          const message =
-            (typeof error === "string" && error) ||
-            error?.message ||
-            (typeof error?.code !== "undefined" ? `Code ${error.code}` : "") ||
-            "Unknown geolocation error";
+          const message = error?.message || `Code ${error?.code}` || "Unknown geolocation error";
           console.error("Geolocation error:", message);
-          setGeoError(
-            "Location access denied or unavailable. You can enable location services or enter a place name below."
-          );
+          setGeoError("Location access denied or unavailable. Enter a place name below.");
         }
       );
     } else {
@@ -67,23 +51,42 @@ export default function LocalLens() {
     }
   }, [coords]);
 
+  // Dev sanity tests to safeguard the title-cleaning logic
+  useEffect(() => {
+    try {
+      const strip = (s) =>
+        s
+          .replace(/^City of\s+/i, "")
+          .replace(/^Capital City of\s+/i, "")
+          .replace(/^Municipality of\s+/i, "")
+          .replace(/^District of\s+/i, "")
+          .replace(/^County of\s+/i, "")
+          .trim();
+      console.assert(strip("Capital City of Prague") === "Prague", "strip failed: Capital City of Prague");
+      console.assert(strip("City of London") === "London", "strip failed: City of London");
+      console.assert(strip("District of Columbia") === "Columbia", "strip failed: District of Columbia");
+    } catch (_) {}
+  }, []);
+
   async function fetchLocationData(lat, lon) {
     setLoading(true);
     try {
-      // Reverse geocode to get place name
-      const geoRes = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
-      );
+      const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&zoom=18&lat=${lat}&lon=${lon}`);
       const geoData = await geoRes.json();
+      const addr = geoData?.address || {};
+
       const name =
-        geoData?.address?.city ||
-        geoData?.address?.town ||
-        geoData?.address?.village ||
-        geoData?.name ||
+        (addr.road ? `${addr.road}${addr.house_number ? " " + addr.house_number : ""}` : null) ||
+        addr.neighbourhood ||
+        addr.suburb ||
+        addr.city ||
+        addr.town ||
+        addr.village ||
+        geoData?.display_name ||
         "Unknown location";
       setLocationName(name);
 
-      await fetchWikipediaFact(name);
+      await fetchWikipediaFact(name, lat, lon);
     } catch (err) {
       console.error("Error fetching reverse geocode:", err);
       setFact("Unable to fetch location details at the moment.");
@@ -92,17 +95,69 @@ export default function LocalLens() {
     }
   }
 
-  async function fetchWikipediaFact(name) {
+  async function fetchWikipediaFact(name, lat, lon) {
     try {
-      const wikiRes = await fetch(
-        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name)}`
-      );
-      const wikiData = await wikiRes.json();
-      if (wikiData?.extract) {
-        setFact(wikiData.extract);
-      } else {
-        setFact("No interesting fact found for this location.");
+      // Try original name then a cleaned version (e.g., "Capital City of Prague" -> "Prague")
+      const candidates = [];
+      const strip = (s) =>
+        typeof s === "string"
+          ? s
+              .replace(/^City of\s+/i, "")
+              .replace(/^Capital City of\s+/i, "")
+              .replace(/^Municipality of\s+/i, "")
+              .replace(/^District of\s+/i, "")
+              .replace(/^County of\s+/i, "")
+              .trim()
+          : s;
+
+      if (name) {
+        candidates.push(name);
+        const cleaned = strip(name);
+        if (cleaned && cleaned !== name) candidates.push(cleaned);
       }
+
+      // Try candidate titles first
+      for (const title of candidates) {
+        const wikiRes = await fetch(
+          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
+        );
+        if (wikiRes.ok) {
+          const wikiData = await wikiRes.json();
+          if (wikiData?.extract) {
+            setFact(wikiData.extract);
+            return;
+          }
+        }
+      }
+
+      // Fallback: progressive geosearch starting at 300m; expand only if nothing is found
+      if (typeof lat === "number" && typeof lon === "number") {
+        const radii = [300, 600, 1200, 3000]; // starts at 300m, expands only as needed
+        for (const r of radii) {
+          const url = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=${r}&gslimit=10&format=json&origin=*`;
+          const res = await fetch(url);
+          if (!res.ok) continue;
+          const data = await res.json();
+          const hits = data?.query?.geosearch || [];
+          if (hits.length > 0) {
+            // Prefer the closest item with a valid summary
+            for (const h of hits) {
+              const summary = await fetch(
+                `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(h.title)}`
+              );
+              if (!summary.ok) continue;
+              const summaryData = await summary.json();
+              if (summaryData?.extract) {
+                setLocationName(h.title);
+                setFact(summaryData.extract);
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      setFact("No interesting fact found for this location.");
     } catch (err) {
       console.error("Error fetching wiki fact:", err);
       setFact("Unable to fetch location facts at the moment.");
@@ -115,10 +170,7 @@ export default function LocalLens() {
     setLoading(true);
     setGeoError("");
     try {
-      // Try to resolve to coordinates (optional), but primarily use the name for facts
-      const searchRes = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`
-      );
+      const searchRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(q)}`);
       const searchData = await searchRes.json();
       if (Array.isArray(searchData) && searchData.length > 0) {
         const item = searchData[0];
@@ -126,8 +178,8 @@ export default function LocalLens() {
         setLocationName(item.display_name || q);
       } else {
         setLocationName(q);
+        await fetchWikipediaFact(q);
       }
-      await fetchWikipediaFact(q);
     } catch (err) {
       console.error("Manual lookup error:", err);
       setFact("Unable to fetch data for the specified place.");
@@ -139,23 +191,13 @@ export default function LocalLens() {
   return (
     <div className="min-h-screen bg-gray-100 p-4 flex flex-col items-center justify-center text-center">
       <h1 className="text-3xl font-bold mb-4">🌍 LocalLens</h1>
-
       <div className="max-w-lg w-full bg-white rounded-xl shadow p-6">
-        {geoError && (
-          <p className="text-red-600 mb-4 text-sm" role="alert">{geoError}</p>
-        )}
-
+        {geoError && <p className="text-red-600 mb-4 text-sm" role="alert">{geoError}</p>}
         <div className="flex items-center justify-center gap-2 mb-4">
           <MapPinIcon className="w-5 h-5" />
-          <span className="text-lg font-semibold">
-            {locationName || (coords ? "Locating..." : "Enter a place or allow location")}
-          </span>
+          <span className="text-lg font-semibold">{locationName || (coords ? "Locating..." : "Enter a place or allow location")}</span>
         </div>
-
-        <p className="text-sm text-gray-700 min-h-[3rem]">
-          {loading ? "Loading fun fact..." : fact}
-        </p>
-
+        <p className="text-sm text-gray-700 min-h-[3rem]">{loading ? "Loading fun fact..." : fact}</p>
         <div className="mt-4 flex items-center gap-2 justify-center">
           <button
             className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center justify-center gap-2 disabled:bg-blue-300"
@@ -165,19 +207,15 @@ export default function LocalLens() {
             <RefreshCcwIcon className="w-4 h-4" /> Refresh Fact
           </button>
         </div>
-
-        {/* Manual input fallback */}
         <div className="mt-6">
-          <label htmlFor="place" className="block text-sm font-medium text-gray-700 mb-1">
-            Or look up a place manually
-          </label>
+          <label htmlFor="place" className="block text-sm font-medium text-gray-700 mb-1">Or look up a place manually</label>
           <div className="flex gap-2">
             <input
               id="place"
               type="text"
               value={manualQuery}
               onChange={(e) => setManualQuery(e.target.value)}
-              placeholder="e.g., Prague, Eiffel Tower, Golden Gate Bridge"
+              placeholder="e.g., 123 Main St, Prague"
               className="flex-1 rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <button
