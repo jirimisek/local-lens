@@ -175,27 +175,27 @@ export default function LocalLens() {
   }
 
   // Refresh both location and facts using a fresh geolocation reading
-  function refreshLocation() {
-    if (typeof window === "undefined" || !navigator.geolocation) {
-      setGeoError("Geolocation not supported by your browser.");
-      return;
-    }
-    setLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lon = position.coords.longitude;
-        setCoords({ lat, lon }); // triggers fetch via useEffect
-        setGeoError("");
-      },
-      (error) => {
-        console.error("Geolocation refresh error:", error?.message || `Code ${error?.code}` || error);
-        setGeoError("Unable to refresh location. Please check permissions and try again.");
-        setLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
+  function requestLocation() {
+  if (typeof window === "undefined") return;
+  if (!navigator.geolocation) {
+    setGeoError("Geolocation not supported by your browser. Please enter a place name below.");
+    return;
   }
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+      setCoords({ lat, lon });     // triggers fetch via useEffect
+      setGeoError("");
+    },
+    (error) => {
+      console.error("Geolocation error:", error?.message || `Code ${error?.code}` || error);
+      setGeoError("Location access denied or unavailable. Enter a place name below.");
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 flex flex-col items-center justify-center text-center">
