@@ -28,46 +28,23 @@ export default function LocalLens() {
   const [manualQuery, setManualQuery] = useState("");
 
   useEffect(() => {
+    requestLocation();
+  }, []);
+
+  function requestLocation() {
     if (typeof window === "undefined") return;
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setCoords({ lat: position.coords.latitude, lon: position.coords.longitude });
-          setGeoError("");
-        },
-        (error) => {
-          const message = error?.message || `Code ${error?.code}` || "Unknown geolocation error";
-          console.error("Geolocation error:", message);
-          setGeoError("Location access denied or unavailable. Enter a place name below.");
-        }
-      );
+      navigator.geolocation.getCurrentPosition($1, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
     } else {
       setGeoError("Geolocation not supported by your browser. Please enter a place name below.");
     }
-  }, []);
+  }
 
   useEffect(() => {
     if (coords) {
       fetchLocationData(coords.lat, coords.lon);
     }
   }, [coords]);
-
-  // Dev sanity tests to safeguard the title-cleaning logic
-  useEffect(() => {
-    try {
-      const strip = (s) =>
-        s
-          .replace(/^City of\s+/i, "")
-          .replace(/^Capital City of\s+/i, "")
-          .replace(/^Municipality of\s+/i, "")
-          .replace(/^District of\s+/i, "")
-          .replace(/^County of\s+/i, "")
-          .trim();
-      console.assert(strip("Capital City of Prague") === "Prague", "strip failed: Capital City of Prague");
-      console.assert(strip("City of London") === "London", "strip failed: City of London");
-      console.assert(strip("District of Columbia") === "Columbia", "strip failed: District of Columbia");
-    } catch (_) {}
-  }, []);
 
   async function fetchLocationData(lat, lon) {
     setLoading(true);
@@ -98,7 +75,6 @@ export default function LocalLens() {
   }
 
   function pickImageFromSummary(data) {
-    // Prefer the larger "originalimage" when available, fallback to "thumbnail"
     if (data?.originalimage?.source) return data.originalimage.source;
     if (data?.thumbnail?.source) return data.thumbnail.source;
     return "";
@@ -106,7 +82,6 @@ export default function LocalLens() {
 
   async function fetchWikipediaFactAndImage(name, lat, lon) {
     try {
-      // Try original name then a cleaned version (e.g., "Capital City of Prague" -> "Prague")
       const candidates = [];
       const strip = (s) =>
         typeof s === "string"
@@ -125,7 +100,6 @@ export default function LocalLens() {
         if (cleaned && cleaned !== name) candidates.push(cleaned);
       }
 
-      // Try candidate titles first
       for (const title of candidates) {
         const wikiRes = await fetch(
           `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
@@ -142,7 +116,6 @@ export default function LocalLens() {
         }
       }
 
-      // Fallback: progressive geosearch starting at 300m; expand only if nothing is found
       if (typeof lat === "number" && typeof lon === "number") {
         const radii = [300, 600, 1200, 3000];
         for (const r of radii) {
@@ -152,7 +125,6 @@ export default function LocalLens() {
           const data = await res.json();
           const hits = data?.query?.geosearch || [];
           if (hits.length > 0) {
-            // Prefer the closest item with a valid summary
             for (const h of hits) {
               const summary = await fetch(
                 `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(h.title)}`
@@ -202,6 +174,29 @@ export default function LocalLens() {
     }
   }
 
+  // Refresh both location and facts using a fresh geolocation reading
+  function refreshLocation() {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      setGeoError("Geolocation not supported by your browser.");
+      return;
+    }
+    setLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+        setCoords({ lat, lon }); // triggers fetch via useEffect
+        setGeoError("");
+      },
+      (error) => {
+        console.error("Geolocation refresh error:", error?.message || `Code ${error?.code}` || error);
+        setGeoError("Unable to refresh location. Please check permissions and try again.");
+        setLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-100 p-4 flex flex-col items-center justify-center text-center">
       <h1 className="text-3xl font-bold mb-4">🌍 LocalLens</h1>
@@ -226,12 +221,9 @@ export default function LocalLens() {
         <p className="text-sm text-gray-700 min-h-[3rem]">{loading ? "Loading fun fact..." : fact}</p>
 
         <div className="mt-4 flex items-center gap-2 justify-center">
-          <button
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center justify-center gap-2 disabled:bg-blue-300"
-            onClick={() => coords && fetchLocationData(coords.lat, coords.lon)}
-            disabled={loading || !coords}
+          <button$1onClick={refreshLocation}$2disabled={loading}
           >
-            <RefreshCcwIcon className="w-4 h-4" /> Refresh Fact
+            <RefreshCcwIcon className="w-4 h-4" /> Refresh Location & Fact
           </button>
         </div>
 
