@@ -34,7 +34,7 @@ export default function LocalLens() {
   function requestLocation() {
     if (typeof window === "undefined") return;
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition($1, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+      navigator.geolocation.getCurrentPosition( , { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
     } else {
       setGeoError("Geolocation not supported by your browser. Please enter a place name below.");
     }
@@ -221,8 +221,7 @@ export default function LocalLens() {
         <p className="text-sm text-gray-700 min-h-[3rem]">{loading ? "Loading fun fact..." : fact}</p>
 
         <div className="mt-4 flex items-center gap-2 justify-center">
-          <button$1onClick={refreshLocation}$2disabled={loading}
-          >
+          <button onClick={refreshLocation}$1>
             <RefreshCcwIcon className="w-4 h-4" /> Refresh Location & Fact
           </button>
         </div>
