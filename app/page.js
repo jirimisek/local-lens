@@ -126,6 +126,7 @@ export default function LocalLens() {
           const wikiData = await wikiRes.json();
           if (wikiData?.extract) {
             setLocationName(wikiData?.title || title);
+	    setWikiUrl(`https://en.wikipedia.org/wiki/${encodeURIComponent(wikiData.title || title)}`);
             setFact(wikiData.extract);
             const img = pickImageFromSummary(wikiData);
             if (img) setImageUrl(img);
