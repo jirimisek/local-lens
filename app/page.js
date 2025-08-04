@@ -20,6 +20,7 @@ function RefreshCcwIcon(props) {
 
 export default function LocalLens() {
   const [coords, setCoords] = useState(null);
+  const [wikiUrl, setWikiUrl] = useState("");
   const [locationName, setLocationName] = useState("");
   const [fact, setFact] = useState("");
   const [imageUrl, setImageUrl] = useState("");
@@ -214,6 +215,16 @@ export default function LocalLens() {
         )}
 
         <p className="text-sm text-gray-700 min-h-[3rem]">{loading ? "Loading fun fact..." : fact}</p>
+	{wikiUrl && !loading && (
+  		<a
+    			href={wikiUrl}
+    			target="_blank"
+    			rel="noopener noreferrer"
+    			className="text-blue-600 hover:underline text-sm mt-2 inline-block"
+  		>
+    			Read more on Wikipedia
+  		</a>
+	)}
 
         <div className="mt-4 flex items-center gap-2 justify-center">
           <button
