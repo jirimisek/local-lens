@@ -153,7 +153,8 @@ export default function LocalLens() {
               const summaryData = await summary.json();
               if (summaryData?.extract) {
                 setLocationName(summaryData?.title || h.title);
-                setFact(summaryData.extract);
+                setWikiUrl(`https://en.wikipedia.org/wiki/${encodeURIComponent(summaryData.title || h.title)}`);
+		setFact(summaryData.extract);
                 const img = pickImageFromSummary(summaryData);
                 if (img) setImageUrl(img);
                 return;
@@ -162,7 +163,7 @@ export default function LocalLens() {
           }
         }
       }
-
+      setWikiUrl("");
       setFact("No interesting fact found for this location.");
     } catch (err) {
       console.error("Error fetching wiki fact/image:", err);
