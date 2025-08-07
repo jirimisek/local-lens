@@ -24,14 +24,12 @@ export default function LocalLens() {
   const [loading, setLoading] = useState(false);
   const [geoError, setGeoError] = useState("");
   const [manualQuery, setManualQuery] = useState("");
+  const [factItems, setFactItems] = useState([]);
 
-  // Call refreshLocation on mount
   useEffect(() => {
     refreshLocation();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 🔁 Fresh geolocation (used on mount and by the button)
   function refreshLocation() {
     if (typeof window === "undefined" || !navigator.geolocation) {
       setGeoError("Geolocation not supported by your browser. Please enter a place name below.");
@@ -42,7 +40,7 @@ export default function LocalLens() {
       (position) => {
         const lat = position.coords.latitude;
         const lon = position.coords.longitude;
-        setCoords({ lat, lon }); // triggers fetch via useEffect
+        setCoords({ lat, lon });
         setGeoError("");
       },
       (error) => {
@@ -62,7 +60,6 @@ export default function LocalLens() {
 
   async function fetchLocationData(lat, lon) {
     setLoading(true);
-    setImageUrl("");
     try {
       const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&zoom=18&lat=${lat}&lon=${lon}`);
       const geoData = await geoRes.json();
@@ -77,12 +74,12 @@ export default function LocalLens() {
         addr.village ||
         geoData?.display_name ||
         "Unknown location";
-      setLocationName(name);
 
+      setLocationName(name);
       await fetchWikipediaFactAndImage(name, lat, lon);
     } catch (err) {
       console.error("Error fetching reverse geocode:", err);
-      setFact("Unable to fetch location details at the moment.");
+      setFactItems([{ title: "Error", summary: "Unable to fetch location details at the moment.", image: "", link: "" }]);
     } finally {
       setLoading(false);
     }
@@ -94,93 +91,55 @@ export default function LocalLens() {
     return "";
   }
 
-async function fetchWikipediaFactAndImage(name, lat, lon) {
-  const results = [];
+  async function fetchWikipediaFactAndImage(name, lat, lon) {
+    const results = [];
 
-  const tryTitles = async (titles) => {
-    for (const title of titles) {
-      const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (data?.extract) {
-        results.push({
-          title: data.title,
-          summary: data.extract,
-          image: pickImageFromSummary(data),
-          link: `https://en.wikipedia.org/wiki/${encodeURIComponent(data.title)}`
-        });
-      }
-      if (results.length >= 3) return;
-    }
-  };
-
-  const strip = (s) => typeof s === "string" ? s.replace(/^City of\s+|^Capital City of\s+|^Municipality of\s+|^District of\s+|^County of\s+/i, "").trim() : s;
-
-  const candidates = [];
-  if (name) {
-    candidates.push(name);
-    const cleaned = strip(name);
-    if (cleaned && cleaned !== name) candidates.push(cleaned);
-  }
-
-  await tryTitles(candidates);
-
-  // If not enough results, do geosearch
-  if (results.length < 3 && lat && lon) {
-    const radii = [300, 600, 1200];
-    for (const r of radii) {
-      const url = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=${r}&gslimit=10&format=json&origin=*`;
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      const data = await res.json();
-      const hits = data?.query?.geosearch || [];
-      const titles = hits.map(h => h.title);
-      await tryTitles(titles);
-      if (results.length >= 3) break;
-    }
-  }
-
-  if (results.length > 0) {
-    setFactItems(results.slice(0, 3));
-  } else {
-    setFactItems([{ title: name, summary: "No interesting fact found for this location.", image: "", link: "" }]);
-  }
-}
-
-
-      // Fallback: progressive geosearch starting at 300m; expand only if nothing is found
-      if (typeof lat === "number" && typeof lon === "number") {
-        const radii = [300, 600, 1200, 3000];
-        for (const r of radii) {
-          const url = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=${r}&gslimit=10&format=json&origin=*`;
-          const res = await fetch(url);
-          if (!res.ok) continue;
-          const data = await res.json();
-          const hits = data?.query?.geosearch || [];
-          if (hits.length > 0) {
-            for (const h of hits) {
-              const summary = await fetch(
-                `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(h.title)}`
-              );
-              if (!summary.ok) continue;
-              const summaryData = await summary.json();
-              if (summaryData?.extract) {
-                setLocationName(summaryData?.title || h.title);
-                setWikiUrl(`https://en.wikipedia.org/wiki/${encodeURIComponent(summaryData.title || h.title)}`);
-		setFact(summaryData.extract);
-                const img = pickImageFromSummary(summaryData);
-                if (img) setImageUrl(img);
-                return;
-              }
-            }
-          }
+    const tryTitles = async (titles) => {
+      for (const title of titles) {
+        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (data?.extract) {
+          results.push({
+            title: data.title,
+            summary: data.extract,
+            image: pickImageFromSummary(data),
+            link: `https://en.wikipedia.org/wiki/${encodeURIComponent(data.title)}`
+          });
         }
+        if (results.length >= 3) return;
       }
-      setWikiUrl("");
-      setFact("No interesting fact found for this location.");
-    } catch (err) {
-      console.error("Error fetching wiki fact/image:", err);
-      setFact("Unable to fetch location facts at the moment.");
+    };
+
+    const strip = (s) => typeof s === "string" ? s.replace(/^City of\s+|^Capital City of\s+|^Municipality of\s+|^District of\s+|^County of\s+/i, "").trim() : s;
+
+    const candidates = [];
+    if (name) {
+      candidates.push(name);
+      const cleaned = strip(name);
+      if (cleaned && cleaned !== name) candidates.push(cleaned);
+    }
+
+    await tryTitles(candidates);
+
+    if (results.length < 3 && lat && lon) {
+      const radii = [300, 600, 1200];
+      for (const r of radii) {
+        const url = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=${r}&gslimit=10&format=json&origin=*`;
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const data = await res.json();
+        const hits = data?.query?.geosearch || [];
+        const titles = hits.map(h => h.title);
+        await tryTitles(titles);
+        if (results.length >= 3) break;
+      }
+    }
+
+    if (results.length > 0) {
+      setFactItems(results.slice(0, 3));
+    } else {
+      setFactItems([{ title: name, summary: "No interesting fact found for this location.", image: "", link: "" }]);
     }
   }
 
@@ -202,7 +161,7 @@ async function fetchWikipediaFactAndImage(name, lat, lon) {
       }
     } catch (err) {
       console.error("Manual lookup error:", err);
-      setFact("Unable to fetch data for the specified place.");
+      setFactItems([{ title: "Error", summary: "Unable to fetch data for the specified place.", image: "", link: "" }]);
     } finally {
       setLoading(false);
     }
@@ -219,46 +178,35 @@ async function fetchWikipediaFactAndImage(name, lat, lon) {
           <span className="text-lg font-semibold">{locationName || (coords ? "Locating..." : "Enter a place or allow location")}</span>
         </div>
 
-        {imageUrl && (
-          <img
-            src={imageUrl}
-            alt={`Image of ${locationName}`}
-            className="w-full max-h-80 object-cover rounded-lg mb-4 shadow"
-            loading="lazy"
-            referrerPolicy="no-referrer"
-          />
-        )}
-
         {loading ? (
-  <p className="text-sm text-gray-700 min-h-[3rem]">Loading fun facts...</p>
-) : (
-  factItems.map((item, idx) => (
-    <div key={idx} className="text-left mb-4">
-      <h3 className="font-semibold text-md">{item.title}</h3>
-      {item.image && (
-        <img
-          src={item.image}
-          alt={item.title}
-          className="w-full max-h-40 object-cover rounded-lg my-2 shadow"
-          loading="lazy"
-          referrerPolicy="no-referrer"
-        />
-      )}
-      <p className="text-sm text-gray-700">{item.summary}</p>
-      {item.link && (
-        <a
-          href={item.link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-600 hover:underline text-sm inline-block mt-1"
-        >
-          Read more on Wikipedia
-        </a>
-      )}
-    </div>
-  ))
-)}
-
+          <p className="text-sm text-gray-700 min-h-[3rem]">Loading fun facts...</p>
+        ) : (
+          factItems.map((item, idx) => (
+            <div key={idx} className="text-left mb-4">
+              <h3 className="font-semibold text-md">{item.title}</h3>
+              {item.image && (
+                <img
+                  src={item.image}
+                  alt={item.title}
+                  className="w-full max-h-40 object-cover rounded-lg my-2 shadow"
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
+              )}
+              <p className="text-sm text-gray-700">{item.summary}</p>
+              {item.link && (
+                <a
+                  href={item.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline text-sm inline-block mt-1"
+                >
+                  Read more on Wikipedia
+                </a>
+              )}
+            </div>
+          ))
+        )}
 
         <div className="mt-4 flex items-center gap-2 justify-center">
           <button
