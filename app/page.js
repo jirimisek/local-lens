@@ -123,7 +123,7 @@ export default function LocalLens() {
     await tryTitles(candidates);
 
     if (results.length < 3 && lat && lon) {
-      const radii = [300, 600, 1200];
+      const radii = [300, 600, 1200, 3000];
       for (const r of radii) {
         const url = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=${r}&gslimit=10&format=json&origin=*`;
         const res = await fetch(url);
